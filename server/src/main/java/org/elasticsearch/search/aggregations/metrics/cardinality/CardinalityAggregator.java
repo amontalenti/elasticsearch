@@ -90,12 +90,14 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
 
         // AM note: we simple had to try -- it can't be this easy?
         if (valuesSource instanceof ValuesSource.Bytes) {
+            // FIXME: Seems like this path isn't getting with `hll` field
             ValuesSource.Bytes source = (ValuesSource.Bytes) valuesSource;
             SortedBinaryDocValues rollupValues = source.bytesValues(ctx);
             return new RollupCollector(counts, rollupValues);
         }
 
         if (valuesSource instanceof ValuesSource.Bytes.WithOrdinals) {
+            // FIXME: Oddly, this path *does* get with `hll` field as it is
             ValuesSource.Bytes.WithOrdinals source = (ValuesSource.Bytes.WithOrdinals) valuesSource;
             final SortedSetDocValues ordinalValues = source.ordinalsValues(ctx);
             final long maxOrd = ordinalValues.getValueCount();
