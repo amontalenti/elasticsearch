@@ -19,10 +19,13 @@
 
 package org.elasticsearch.index.mapper.hll;
 
+import com.carrotsearch.hppc.BitMixer;
 import org.apache.lucene.document.BinaryDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.IndexOptions;
 import org.apache.lucene.index.IndexableField;
+import org.elasticsearch.common.io.stream.OutputStreamStreamOutput;
+import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.apache.lucene.search.DocValuesFieldExistsQuery;
 import org.apache.lucene.search.Query;
@@ -39,7 +42,9 @@ import org.elasticsearch.index.mapper.ParseContext;
 import org.elasticsearch.index.mapper.TypeParsers;
 import org.elasticsearch.index.query.QueryShardContext;
 import org.elasticsearch.index.query.QueryShardException;
+import org.elasticsearch.search.aggregations.metrics.cardinality.HyperLogLogPlusPlus;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -170,8 +175,22 @@ public class HLLFieldMapper extends FieldMapper {
             // do we need to use parse() rather than parseCreateField?
             // See GeoPointFieldMapper for an implementation of parse() using START_ARRAY and similar
             
-            // all the above is ignored and a hard-coded binary string is added to the index
-            fields.add(new BinaryDocValuesField(fieldType().name(), new BytesRef("xxx")));
+            // all the above is ignored and a hard-coded byte[] is added to the index, with the HLL format
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            OutputStreamStreamOutput osso = new OutputStreamStreamOutput(baos);
+            HyperLogLogPlusPlus counts = new HyperLogLogPlusPlus(18, BigArrays.NON_RECYCLING_INSTANCE, 0);
+            int sampleId = 0;
+            counts.collect(0, BitMixer.mix64(sampleId));
+            long cardinality = counts.cardinality(0);
+            long precision = counts.precision();
+            long maxBucket = counts.maxBucket();
+            try {
+                counts.writeTo(0, osso);
+            } catch (IOException e) {
+            }
+            // now we have the HLL as a byte[]
+            byte[] hllBytes = baos.toByteArray();
+            fields.add(new BinaryDocValuesField(fieldType().name(), new BytesRef(hllBytes)));
             if (fieldType().stored()) {
                 fields.add(new StoredField(name(), hash));
             }
