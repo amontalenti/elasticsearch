@@ -157,7 +157,13 @@ public class HLLFieldMapper extends FieldMapper {
     @Override
     protected void parseCreateField(ParseContext context, List<IndexableField> fields)
             throws IOException {
+        // TODO: how do we take multiple values and HLL them?
+        // Ideas:
+        // - do we need to use parse() rather than parseCreateField()?
+        // - should we copy GeoPointFieldMapper, since that impl uses parse() and START_ARRAY and similar?
+
         final Object value;
+
         // controlling the context is what allows us to access array and other values
         if (context.externalValueSet()) {
             value = context.externalValue();
@@ -165,34 +171,47 @@ public class HLLFieldMapper extends FieldMapper {
             // this is assuming that the murmur3 hash field value is just in there as text
             value = context.parser().textOrNull();
         }
+
         if (value != null) {
             // value is turned into bytes
             final BytesRef bytes = new BytesRef(value.toString());
             // those bytes are hashed
-            final long hash = MurmurHash3.hash128(bytes.bytes, bytes.offset, bytes.length, 0, new MurmurHash3.Hash128()).h1;
+            final long hash = MurmurHash3.hash128(bytes.bytes,
+                bytes.offset, bytes.length, 0, new MurmurHash3.Hash128()).h1;
 
-            // OK, but how do we take multiple values and HLL them?
-            // do we need to use parse() rather than parseCreateField?
-            // See GeoPointFieldMapper for an implementation of parse() using START_ARRAY and similar
-            
             // all the above is ignored and a hard-coded byte[] is added to the index, with the HLL format
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             OutputStreamStreamOutput osso = new OutputStreamStreamOutput(baos);
-            HyperLogLogPlusPlus counts = new HyperLogLogPlusPlus(18, BigArrays.NON_RECYCLING_INSTANCE, 0);
-            int sampleId = 0;
-            counts.collect(0, BitMixer.mix64(sampleId));
+
+            // TODO: rollupPrecision should be part of indexing op
+            final int rollupPrecision = 18;
+            HyperLogLogPlusPlus counts = new HyperLogLogPlusPlus(rollupPrecision, BigArrays.NON_RECYCLING_INSTANCE, 0);
+
+            // hashed bytes offered toHLL
+            counts.collect(0, hash);
+
+            // TODO: below are unused, for debugging only
             long cardinality = counts.cardinality(0);
             long precision = counts.precision();
             long maxBucket = counts.maxBucket();
             try {
+                // FIXME: is it right to always specify bucket as 0 here?
                 counts.writeTo(0, osso);
             } catch (IOException e) {
+                // FIXME: when does this IOException actually happen?
             }
-            // now we have the HLL as a byte[]
+            // HLL itself converted into a byte[]
             byte[] hllBytes = baos.toByteArray();
-            fields.add(new BinaryDocValuesField(fieldType().name(), new BytesRef(hllBytes)));
+            // FIXME: is it OK to use same BytesRef instance across two ops below?
+            BytesRef hllBytesRef = new BytesRef(hllBytes);
+
+            // stored as binary DocValues field
+            fields.add(new BinaryDocValuesField(fieldType().name(), hllBytesRef));
+
+            // also stored in field storage (optionally, for reindexing)
             if (fieldType().stored()) {
-                fields.add(new StoredField(name(), hash));
+                // TODO: this field mapping will need to somehow support reindexing from byte[] storage?
+                fields.add(new StoredField(name(), hllBytesRef));
             }
         }
     }
