@@ -29,6 +29,7 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.elasticsearch.common.Nullable;
+import org.elasticsearch.common.io.stream.InputStreamStreamInput;
 import org.elasticsearch.common.lease.Releasable;
 import org.elasticsearch.common.lease.Releasables;
 import org.elasticsearch.common.util.BigArrays;
@@ -44,6 +45,7 @@ import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 import org.elasticsearch.search.aggregations.support.ValuesSource;
 import org.elasticsearch.search.internal.SearchContext;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +86,13 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
             ValuesSource.Numeric source = (ValuesSource.Numeric) valuesSource;
             MurmurHash3Values hashValues = source.isFloatingPoint() ? MurmurHash3Values.hash(source.doubleValues(ctx)) : MurmurHash3Values.hash(source.longValues(ctx));
             return new DirectCollector(counts, hashValues);
+        }
+
+        // AM note: we simple had to try -- it can't be this easy?
+        if (valuesSource instanceof ValuesSource.Bytes) {
+            ValuesSource.Bytes source = (ValuesSource.Bytes) valuesSource;
+            SortedBinaryDocValues rollupValues = source.bytesValues(ctx);
+            return new RollupCollector(counts, rollupValues);
         }
 
         if (valuesSource instanceof ValuesSource.Bytes.WithOrdinals) {
@@ -179,6 +188,41 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
         public void close() {
             // no-op
         }
+    }
+
+    private static class RollupCollector extends Collector {
+
+        private final HyperLogLogPlusPlus counts;
+        private final SortedBinaryDocValues rollups;
+
+        RollupCollector(HyperLogLogPlusPlus counts, SortedBinaryDocValues rollups) {
+            this.counts = counts;
+            this.rollups = rollups;
+        }
+
+        @Override
+        public void collect(int doc, long bucketOrd) throws IOException {
+            // Each binary blob is in the SortedBinaryDocValues object, so we just advance along,
+            // deserialize, and merge. That easy?
+            if (rollups.advanceExact(doc)) {
+                BytesRef bytes = rollups.nextValue();
+                ByteArrayInputStream bais = new ByteArrayInputStream(bytes.bytes);
+                InputStreamStreamInput issi = new InputStreamStreamInput(bais);
+                HyperLogLogPlusPlus rollup = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
+                counts.merge(0, rollup, 0);
+            }
+        }
+
+        @Override
+        public void postCollect() {
+            // no-op
+        }
+
+        @Override
+        public void close() {
+            // no-op
+        }
+
     }
 
     private static class DirectCollector extends Collector {
