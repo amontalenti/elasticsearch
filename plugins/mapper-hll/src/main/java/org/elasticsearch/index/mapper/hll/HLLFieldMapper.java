@@ -198,10 +198,13 @@ public class HLLFieldMapper extends FieldMapper {
                 counts.writeTo(0, osso);
             } catch (IOException e) {
                 // FIXME: when does this IOException actually happen?
+            } finally {
+                osso.close();
             }
             // HLL itself converted into a byte[]
             byte[] hllBytes = baos.toByteArray();
-            assert hllBytes.length > 0 : "Encoded HLL had no bytes";
+            int hllBytesLength = hllBytes.length;
+            assert hllBytesLength > 0 : "Encoded HLL had no bytes";
             // FIXME: is it OK to use same BytesRef instance across two ops below?
             BytesRef hllBytesRef = new BytesRef(hllBytes);
 
