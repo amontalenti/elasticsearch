@@ -19,6 +19,7 @@
 
 package org.elasticsearch.index.mapper.hll;
 
+import com.carrotsearch.hppc.BitMixer;
 import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.IndexOptions;
@@ -186,8 +187,10 @@ public class HLLFieldMapper extends FieldMapper {
             final int rollupPrecision = 18;
             HyperLogLogPlusPlus counts = new HyperLogLogPlusPlus(rollupPrecision, BigArrays.NON_RECYCLING_INSTANCE, 0);
 
+            final long mixedHash = BitMixer.mix64(hash);
+
             // hashed bytes offered toHLL
-            counts.collect(0, hash);
+            counts.collect(0, mixedHash);
 
             // TODO: below are unused, for debugging only
             long cardinality = counts.cardinality(0);
