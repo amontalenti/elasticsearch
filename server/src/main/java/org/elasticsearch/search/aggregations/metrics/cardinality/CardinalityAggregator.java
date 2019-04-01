@@ -223,7 +223,6 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
                 HyperLogLogPlusPlus rollup = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
                 long cardCounts1 = counts.cardinality(0);
                 long cardRollups1 = rollup.cardinality(0);
-                // TODO: why, on earth, is the value `0` expected everywhere for bucket?
                 counts.merge(0, rollup, 0);
                 long cardCounts2 = counts.cardinality(0);
                 long cardRollups2 = rollup.cardinality(0);
