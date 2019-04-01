@@ -68,8 +68,13 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
             SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
         super(name, context, parent, pipelineAggregators, metaData);
         // FIXME: the below hack obviously can't stay
-        // we're overriding the precision to 18 because in this implementation, precision is tuneable per-query,
-        // but in our HLL Rollups, we store the precision in the index
+        //
+        // We're overriding the precision to 18 because, in the standard `cardinality` aggregation,
+        // precision is tuneable per-query. But, in our HLL Rollups, we store the precision in the index,
+        // hard-coded to 18. See HLLFieldMapper in the `mapper-hll` plugin for that.
+        //
+        // Obviously, when we write our own `hll-uniq` agg, we'll have it create this first "root" HLL
+        // using the precision of the HLLs stored in the index.
         precision = 18;
         this.valuesSource = valuesSource;
         this.precision = precision;
@@ -195,6 +200,7 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
         }
     }
 
+    // FIXME: This "RollupCollector" was written as a hack to prove that deserializing the HLLs might work
     private static class RollupCollector extends Collector {
 
         private final HyperLogLogPlusPlus counts;
@@ -207,8 +213,7 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
 
         @Override
         public void collect(int doc, long bucketOrd) throws IOException {
-            // Each binary blob is in the SortedBinaryDocValues object, so we just advance along,
-            // deserialize, and merge. That easy?
+            // Each binary blob is in the SortedBinaryDocValues object, so we just advance along deserialize, and merge.
             if (rollups.advanceExact(doc)) {
                 BytesRef bytes = rollups.nextValue();
                 byte[] hllBytes = bytes.bytes;
@@ -218,10 +223,11 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
                 HyperLogLogPlusPlus rollup = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
                 long cardCounts1 = counts.cardinality(0);
                 long cardRollups1 = rollup.cardinality(0);
+                // TODO: why, on earth, is the value `0` expected everywhere for bucket?
                 counts.merge(0, rollup, 0);
                 long cardCounts2 = counts.cardinality(0);
                 long cardRollups2 = rollup.cardinality(0);
-                long maxBucket = rollup.maxBucket();
+                long maxBucket = counts.maxBucket();
             }
         }
 
