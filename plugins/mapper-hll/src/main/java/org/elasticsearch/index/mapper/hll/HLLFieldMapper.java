@@ -19,8 +19,7 @@
 
 package org.elasticsearch.index.mapper.hll;
 
-import com.carrotsearch.hppc.BitMixer;
-import org.apache.lucene.document.BinaryDocValuesField;
+import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.IndexOptions;
 import org.apache.lucene.index.IndexableField;
@@ -202,11 +201,13 @@ public class HLLFieldMapper extends FieldMapper {
             }
             // HLL itself converted into a byte[]
             byte[] hllBytes = baos.toByteArray();
+            assert hllBytes.length > 0 : "Encoded HLL had no bytes";
             // FIXME: is it OK to use same BytesRef instance across two ops below?
             BytesRef hllBytesRef = new BytesRef(hllBytes);
 
             // stored as binary DocValues field
-            fields.add(new BinaryDocValuesField(fieldType().name(), hllBytesRef));
+            //fields.add(new BinaryDocValuesField(fieldType().name(), hllBytesRef));
+            fields.add(new SortedDocValuesField(fieldType().name(), hllBytesRef));
 
             // also stored in field storage (optionally, for reindexing)
             if (fieldType().stored()) {
