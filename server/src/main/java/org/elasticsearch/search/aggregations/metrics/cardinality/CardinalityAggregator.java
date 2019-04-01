@@ -67,6 +67,10 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
     public CardinalityAggregator(String name, ValuesSource valuesSource, int precision,
             SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
         super(name, context, parent, pipelineAggregators, metaData);
+        // FIXME: the below hack obviously can't stay
+        // we're overriding the precision to 18 because in this implementation, precision is tuneable per-query,
+        // but in our HLL Rollups, we store the precision in the index
+        precision = 18;
         this.valuesSource = valuesSource;
         this.precision = precision;
         this.counts = valuesSource == null ? null : new HyperLogLogPlusPlus(precision, context.bigArrays(), 1);
@@ -90,14 +94,13 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
 
         // AM note: we simple had to try -- it can't be this easy?
         if (valuesSource instanceof ValuesSource.Bytes) {
-            // FIXME: Seems like this path isn't getting with `hll` field
+            // FIXME: This path is a total hack, but gets us into the process
             ValuesSource.Bytes source = (ValuesSource.Bytes) valuesSource;
             SortedBinaryDocValues rollupValues = source.bytesValues(ctx);
             return new RollupCollector(counts, rollupValues);
         }
 
         if (valuesSource instanceof ValuesSource.Bytes.WithOrdinals) {
-            // FIXME: Oddly, this path *does* get with `hll` field as it is
             ValuesSource.Bytes.WithOrdinals source = (ValuesSource.Bytes.WithOrdinals) valuesSource;
             final SortedSetDocValues ordinalValues = source.ordinalsValues(ctx);
             final long maxOrd = ordinalValues.getValueCount();
