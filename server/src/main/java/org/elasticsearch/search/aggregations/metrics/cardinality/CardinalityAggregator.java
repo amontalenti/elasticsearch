@@ -208,7 +208,9 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
             // deserialize, and merge. That easy?
             if (rollups.advanceExact(doc)) {
                 BytesRef bytes = rollups.nextValue();
-                ByteArrayInputStream bais = new ByteArrayInputStream(bytes.bytes);
+                byte[] hllBytes = bytes.bytes;
+                assert hllBytes.length > 0 : "Decoded HLL had no bytes";
+                ByteArrayInputStream bais = new ByteArrayInputStream(hllBytes);
                 InputStreamStreamInput issi = new InputStreamStreamInput(bais);
                 HyperLogLogPlusPlus rollup = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
                 counts.merge(0, rollup, 0);
