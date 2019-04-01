@@ -213,7 +213,10 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
                 ByteArrayInputStream bais = new ByteArrayInputStream(hllBytes);
                 InputStreamStreamInput issi = new InputStreamStreamInput(bais);
                 HyperLogLogPlusPlus rollup = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
-                counts.merge(0, rollup, 0);
+                long cardDeser = rollup.cardinality(0);
+                counts.merge(0, rollup, 1);
+                long cardCounts = counts.cardinality(0);
+                long cardRollup = rollup.cardinality(0);
             }
         }
 
