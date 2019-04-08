@@ -216,7 +216,7 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
             // Each binary blob is in the SortedBinaryDocValues object, so we just advance along deserialize, and merge.
             if (rollups.advanceExact(doc)) {
                 BytesRef bytes = rollups.nextValue();
-                assert bytes.length > 0 : "Decoded HLL had no bytes";
+                // assert bytes.length > 0 : "Decoded HLL had no bytes";
                 // Originally, we created the copy this way, but when I read more about
                 // what the BytesRef actually is, I realized it's totally wrong.
                 // byte[] hllBytes = bytes.bytes;
