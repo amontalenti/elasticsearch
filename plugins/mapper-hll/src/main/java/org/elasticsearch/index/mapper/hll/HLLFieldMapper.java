@@ -207,7 +207,8 @@ public class HLLFieldMapper extends FieldMapper {
             // HLL itself converted into a byte[]
             byte[] hllBytes = baos.toByteArray();
             int hllBytesLength = hllBytes.length;
-            assert hllBytesLength > 0 : "Encoded HLL had no bytes";
+            assert hllBytesLength != 0 : "Encoded HLL had no bytes";
+            // TODO: below assumption will break once we support multi-value here
             assert hllBytesLength == 7 : "Encoded HLL did not have 7 bytes";
             // FIXME: is it OK to use same BytesRef instance across two ops below?
             BytesRef hllBytesRef = new BytesRef(hllBytes);

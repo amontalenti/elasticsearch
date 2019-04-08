@@ -156,4 +156,7 @@ public class HLLFieldMapperTests extends ESSingleNodeTestCase {
         );
         assertThat(e.getMessage(), containsString("name cannot be empty string"));
     }
+
+    public void testArrayOfItems() throws Exception {
+    }
 }
