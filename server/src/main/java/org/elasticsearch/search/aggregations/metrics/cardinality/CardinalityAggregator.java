@@ -216,9 +216,13 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
             // Each binary blob is in the SortedBinaryDocValues object, so we just advance along deserialize, and merge.
             if (rollups.advanceExact(doc)) {
                 BytesRef bytes = rollups.nextValue();
-                byte[] hllBytes = bytes.bytes;
-                assert hllBytes.length > 0 : "Decoded HLL had no bytes";
-                ByteArrayInputStream bais = new ByteArrayInputStream(hllBytes);
+                assert bytes.length > 0 : "Decoded HLL had no bytes";
+                // Originally, we created the copy this way, but when I read more about
+                // what the BytesRef actually is, I realized it's totally wrong.
+                // byte[] hllBytes = bytes.bytes;
+                // ByteArrayInputStream bais = new ByteArrayInputStream(hllBytes);
+                // The right way to do it: use the alternative constructor of ByteArrayInputStream:
+                ByteArrayInputStream bais = new ByteArrayInputStream(bytes.bytes, bytes.offset, bytes.length);
                 InputStreamStreamInput issi = new InputStreamStreamInput(bais);
                 HyperLogLogPlusPlus rollup = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
                 long cardCounts1 = counts.cardinality(0);
