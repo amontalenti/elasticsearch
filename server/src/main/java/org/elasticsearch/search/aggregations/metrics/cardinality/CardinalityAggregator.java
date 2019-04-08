@@ -29,6 +29,7 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.elasticsearch.common.Nullable;
+import org.elasticsearch.common.io.stream.InputStreamStreamInput;
 import org.elasticsearch.common.lease.Releasable;
 import org.elasticsearch.common.lease.Releasables;
 import org.elasticsearch.common.util.BigArrays;
@@ -44,6 +45,7 @@ import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 import org.elasticsearch.search.aggregations.support.ValuesSource;
 import org.elasticsearch.search.internal.SearchContext;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +67,15 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
     public CardinalityAggregator(String name, ValuesSource valuesSource, int precision,
             SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
         super(name, context, parent, pipelineAggregators, metaData);
+        // FIXME: the below hack obviously can't stay
+        //
+        // We're overriding the precision to 18 because, in the standard `cardinality` aggregation,
+        // precision is tuneable per-query. But, in our HLL Rollups, we store the precision in the index,
+        // hard-coded to 18. See HLLFieldMapper in the `mapper-hll` plugin for that.
+        //
+        // Obviously, when we write our own `hll-uniq` agg, we'll have it create this first "root" HLL
+        // using the precision of the HLLs stored in the index.
+        precision = 18;
         this.valuesSource = valuesSource;
         this.precision = precision;
         this.counts = valuesSource == null ? null : new HyperLogLogPlusPlus(precision, context.bigArrays(), 1);
@@ -84,6 +95,14 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
             ValuesSource.Numeric source = (ValuesSource.Numeric) valuesSource;
             MurmurHash3Values hashValues = source.isFloatingPoint() ? MurmurHash3Values.hash(source.doubleValues(ctx)) : MurmurHash3Values.hash(source.longValues(ctx));
             return new DirectCollector(counts, hashValues);
+        }
+
+        // AM note: we simple had to try -- it can't be this easy?
+        if (valuesSource instanceof ValuesSource.Bytes) {
+            // FIXME: This path is a total hack, but gets us into the process
+            ValuesSource.Bytes source = (ValuesSource.Bytes) valuesSource;
+            SortedBinaryDocValues rollupValues = source.bytesValues(ctx);
+            return new RollupCollector(counts, rollupValues);
         }
 
         if (valuesSource instanceof ValuesSource.Bytes.WithOrdinals) {
@@ -179,6 +198,56 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
         public void close() {
             // no-op
         }
+    }
+
+    // FIXME: This "RollupCollector" was written as a hack to prove that deserializing the HLLs might work
+    private static class RollupCollector extends Collector {
+
+        private final HyperLogLogPlusPlus counts;
+        private final SortedBinaryDocValues rollups;
+
+        RollupCollector(HyperLogLogPlusPlus counts, SortedBinaryDocValues rollups) {
+            this.counts = counts;
+            this.rollups = rollups;
+        }
+
+        @Override
+        public void collect(int doc, long bucketOrd) throws IOException {
+            // Each binary blob is in the SortedBinaryDocValues object, so we just advance along deserialize, and merge.
+            if (rollups.advanceExact(doc)) {
+                BytesRef bytes = rollups.nextValue();
+                // assert bytes.length > 0 : "Decoded HLL had no bytes";
+                // Originally, we created the copy this way, but when I read more about
+                // what the BytesRef actually is, I realized it's totally wrong.
+                // byte[] hllBytes = bytes.bytes;
+                // ByteArrayInputStream bais = new ByteArrayInputStream(hllBytes);
+                // The right way to do it: use the alternative constructor of ByteArrayInputStream:
+
+                //byte[] hllBytes = BytesRef.deepCopyOf(bytes).bytes;
+                byte[] hllBytesCopy = BytesRef.deepCopyOf(bytes).bytes;
+                byte[] hllBytesRef = bytes.bytes;
+                ByteArrayInputStream bais = new ByteArrayInputStream(bytes.bytes);
+                InputStreamStreamInput issi = new InputStreamStreamInput(bais);
+                HyperLogLogPlusPlus rollup = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
+                long cardCounts1 = counts.cardinality(0);
+                long cardRollups1 = rollup.cardinality(0);
+                counts.merge(0, rollup, 0);
+                long cardCounts2 = counts.cardinality(0);
+                long cardRollups2 = rollup.cardinality(0);
+                long maxBucket = counts.maxBucket();
+            }
+        }
+
+        @Override
+        public void postCollect() {
+            // no-op
+        }
+
+        @Override
+        public void close() {
+            // no-op
+        }
+
     }
 
     private static class DirectCollector extends Collector {

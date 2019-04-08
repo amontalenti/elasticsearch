@@ -555,37 +555,48 @@ public final class HyperLogLogPlusPlus implements Releasable {
     }
 
     public void writeTo(long bucket, StreamOutput out) throws IOException {
+        // first write out the precision
         out.writeVInt(p);
         if (algorithm.get(bucket) == LINEAR_COUNTING) {
             out.writeBoolean(LINEAR_COUNTING);
             try (IntArray hashes = hashSet.values(bucket)) {
+                // then the size as a long
                 out.writeVLong(hashes.size());
                 for (long i = 0; i < hashes.size(); ++i) {
+                    // then each of the encoded ints
                     out.writeInt(hashes.get(i));
                 }
             }
         } else {
+            // write out true since it's an HLL
             out.writeBoolean(HYPERLOGLOG);
             for (long i = bucket << p, end = i + m; i < end; ++i) {
+                // write each bucket from runLens as a byte
                 out.writeByte(runLens.get(i));
             }
         }
     }
 
     public static HyperLogLogPlusPlus readFrom(StreamInput in, BigArrays bigArrays) throws IOException {
+        // first int is the precision setting
         final int precision = in.readVInt();
         HyperLogLogPlusPlus counts = new HyperLogLogPlusPlus(precision, bigArrays, 1);
+        // next bit is true if it's a true HLL, otherwise Linear Counting was used
         final boolean algorithm = in.readBoolean();
         if (algorithm == LINEAR_COUNTING) {
             counts.algorithm.clear(0);
+            // next long is the size of the encoded ints
             final long size = in.readVLong();
             for (long i = 0; i < size; ++i) {
                 final int encoded = in.readInt();
+                // hashSet built up from encoded ints
                 counts.hashSet.add(0, encoded);
             }
         } else {
+            // using HLL
             counts.algorithm.set(0);
             for (int i = 0; i < counts.m; ++i) {
+                // in this case, we just deserialize the buckets into runLens
                 counts.runLens.set(i, in.readByte());
             }
         }

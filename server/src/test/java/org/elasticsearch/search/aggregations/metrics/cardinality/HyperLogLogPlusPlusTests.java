@@ -21,9 +21,16 @@ package org.elasticsearch.search.aggregations.metrics.cardinality;
 
 import com.carrotsearch.hppc.BitMixer;
 import com.carrotsearch.hppc.IntHashSet;
+import org.elasticsearch.common.io.stream.InputStreamStreamInput;
+import org.elasticsearch.common.io.stream.OutputStreamStreamOutput;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.test.ESTestCase;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+
+import static org.apache.logging.log4j.Level.INFO;
 import static org.elasticsearch.search.aggregations.metrics.cardinality.HyperLogLogPlusPlus.MAX_PRECISION;
 import static org.elasticsearch.search.aggregations.metrics.cardinality.HyperLogLogPlusPlus.MIN_PRECISION;
 import static org.hamcrest.Matchers.closeTo;
@@ -125,5 +132,67 @@ public class HyperLogLogPlusPlusTests extends ESTestCase {
         assertEquals(16, HyperLogLogPlusPlus.precisionFromThreshold(10000));
         assertEquals(18, HyperLogLogPlusPlus.precisionFromThreshold(100000));
         assertEquals(18, HyperLogLogPlusPlus.precisionFromThreshold(1000000));
+    }
+
+    private HyperLogLogPlusPlus makeRandomSketch(int size) {
+        // utility to make a random HLL of a given size
+        HyperLogLogPlusPlus counts = new HyperLogLogPlusPlus(MAX_PRECISION, BigArrays.NON_RECYCLING_INSTANCE, 0);
+        for (int i = 0; i < size; i++) {
+            final int n = randomInt(100_000_000);
+            final long hash = BitMixer.mix64(n);
+            counts.collect(0, hash);
+        }
+        return counts;
+    }
+
+    public void testReadWrite() {
+        // We'll test reading and writing HLL bytes for different cardinality sizes
+        // ranging from 1 to 10 million. Beyond 10M, it takes awhile to generate the
+        // random data.
+        int[] sizes = new int[] {
+            1,
+            10,
+            100,
+            1_000,
+            10_000,
+            100_000,
+            1_000_000, // 1 million
+            10_000_000 // 10 million
+        };
+        for (int size : sizes) {
+            // Our goal with the `baos` and `osso` is to just turn the `HyperLogLogPlusPlus.writeTo(...)`
+            // call into a byte[]
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            OutputStreamStreamOutput osso = new OutputStreamStreamOutput(baos);
+            HyperLogLogPlusPlus counts = makeRandomSketch(size);
+            long cardinality = counts.cardinality(0);
+            long precision = counts.precision();
+            long maxBucket = counts.maxBucket();
+            logger.printf(INFO, "%25s: [%d]", "Initial size of", size);
+            logger.printf(INFO,"%25s: [%d]", "Initial cardinality of", cardinality);
+            try {
+                counts.writeTo(0, osso);
+            } catch (IOException e) {
+                fail();
+            }
+            // now we have the HLL as a byte[]
+            byte[] hllBytes = baos.toByteArray();
+            logger.printf(INFO,"%25s: [%d]", "Storing bytes on-disk", hllBytes.length);
+            logger.printf(INFO,"---");
+            // Our goal with `bais` and `issi` is to deserialize the byte[] into the HLL using
+            // the `HyperLogLogPlusPlus.readFrom(...)` method
+            ByteArrayInputStream bais = new ByteArrayInputStream(hllBytes);
+            InputStreamStreamInput issi = new InputStreamStreamInput(bais);
+            try {
+                counts = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
+            } catch (IOException e) {
+                fail();
+            }
+            // now `counts` is our deserialized HLL; this assertion
+            // confirms it by comparing their values
+            assertEquals(cardinality, counts.cardinality(0));
+            assertEquals(precision, counts.precision());
+            assertEquals(maxBucket, counts.maxBucket());
+        }
     }
 }

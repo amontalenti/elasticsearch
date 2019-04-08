@@ -697,7 +697,7 @@ class ClusterFormationTasks {
             // gradle task options are not processed until the end of the configuration phase
             if (node.config.debug) {
                 println 'Running elasticsearch in debug mode, suspending until connected on port 8000'
-                esJavaOpts.add('-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=8000')
+                esJavaOpts.add('-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:8000')
             }
             node.env['ES_JAVA_OPTS'] = esJavaOpts.join(" ")
 
