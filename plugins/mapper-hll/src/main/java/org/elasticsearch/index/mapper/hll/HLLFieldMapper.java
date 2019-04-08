@@ -172,8 +172,9 @@ public class HLLFieldMapper extends FieldMapper {
             assert map.containsKey("items") : "HLL object does not contain 'items' key";
             assert map.containsKey("precision") : "HLL object does not contain 'precision' key";
             Object itemsObject = map.get("items");
-            List itemList = List.class.cast(itemsObject);
-            value = itemList.get(0);
+            if (itemsObject instanceof List) {
+                value = ((List)itemsObject).get(0);
+            }
         } else {
             // controlling the context is what allows us to access array and other values
             if (context.externalValueSet()) {
