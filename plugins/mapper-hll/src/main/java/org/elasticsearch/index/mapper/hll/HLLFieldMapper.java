@@ -166,7 +166,7 @@ public class HLLFieldMapper extends FieldMapper {
         final Object value;
 
         // try to parse it as a map
-        XContentParser.Token token = context.parser().nextToken();
+        XContentParser.Token token = context.parser().currentToken();
         if (token == XContentParser.Token.START_OBJECT) {
             Map<String, Object> map = context.parser().map();
             assert map.containsKey("items") : "HLL object does not contain 'items' key";
