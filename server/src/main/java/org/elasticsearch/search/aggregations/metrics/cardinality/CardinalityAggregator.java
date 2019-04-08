@@ -222,7 +222,8 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
                 // byte[] hllBytes = bytes.bytes;
                 // ByteArrayInputStream bais = new ByteArrayInputStream(hllBytes);
                 // The right way to do it: use the alternative constructor of ByteArrayInputStream:
-                ByteArrayInputStream bais = new ByteArrayInputStream(bytes.bytes, bytes.offset, bytes.length);
+                byte[] hllBytes = BytesRef.deepCopyOf(bytes).bytes;
+                ByteArrayInputStream bais = new ByteArrayInputStream(hllBytes);
                 InputStreamStreamInput issi = new InputStreamStreamInput(bais);
                 HyperLogLogPlusPlus rollup = HyperLogLogPlusPlus.readFrom(issi, BigArrays.NON_RECYCLING_INSTANCE);
                 long cardCounts1 = counts.cardinality(0);
