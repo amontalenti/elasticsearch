@@ -26,6 +26,7 @@ import org.apache.lucene.index.IndexOptions;
 import org.apache.lucene.index.IndexableField;
 import org.elasticsearch.common.io.stream.OutputStreamStreamOutput;
 import org.elasticsearch.common.util.BigArrays;
+import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.apache.lucene.search.DocValuesFieldExistsQuery;
 import org.apache.lucene.search.Query;
@@ -164,12 +165,22 @@ public class HLLFieldMapper extends FieldMapper {
 
         final Object value;
 
-        // controlling the context is what allows us to access array and other values
-        if (context.externalValueSet()) {
-            value = context.externalValue();
+        // try to parse it as a map
+        XContentParser.Token token = context.parser().nextToken();
+        if (token == XContentParser.Token.START_OBJECT) {
+            Map<String, Object> map = context.parser().map();
+            assert map.containsKey("items") : "HLL object does not contain 'items' key";
+            assert map.containsKey("precision") : "HLL object does not contain 'precision' key";
+            Object itemsObject = map.get("items");
+            List<String> itemList = (List)itemsObject;
+            value = itemList.get(0);
         } else {
-            // this is assuming that the murmur3 hash field value is just in there as text
-            value = context.parser().textOrNull();
+            // controlling the context is what allows us to access array and other values
+            if (context.externalValueSet()) {
+                value = context.externalValue();
+            } else {
+                value = context.parser().textOrNull();
+            }
         }
 
         if (value != null) {
