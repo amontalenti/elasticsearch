@@ -47,6 +47,7 @@ import org.elasticsearch.search.aggregations.metrics.cardinality.HyperLogLogPlus
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -173,6 +174,10 @@ public class HLLFieldMapper extends FieldMapper {
             assert map.containsKey("precision") : "HLL object does not contain 'precision' key";
             Object itemsObject = map.get("items");
             if (itemsObject instanceof List) {
+                // FIXME: right now, we're just passing one item out of the list because I'm still Java rusty
+                // The issue here is that List is a raw type, and I need it to be a List<String>. I forget how
+                // I can guarantee that. Meanwhile, down below, I'll need to change this from being a one-at-a-time
+                // process for building HLLs, to a for loop of some kind.
                 value = ((List)itemsObject).get(0);
             } else {
                 value = null;
@@ -185,6 +190,8 @@ public class HLLFieldMapper extends FieldMapper {
                 value = context.parser().textOrNull();
             }
         }
+
+        // FIXME: The below need sto become a for loop, which operates on a single-element list in the textOrNull case above
 
         if (value != null) {
             // value is turned into bytes

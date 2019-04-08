@@ -69,7 +69,7 @@
         index: test
         type: type1
         id: 5
-        body: { "foo": {"items": ["bar", "baz", "bam", "bar"], "precision": 18} }
+        body: { "foo": {"items": ["1", "2", "3", "4"], "precision": 18} }
 
   - do:
       indices.refresh: {}
@@ -78,4 +78,4 @@
       search:
         body: { "aggs": { "foo_count": { "cardinality": { "field": "foo" } } } }
 
-  - match: { aggregations.foo_count.value: 3 }
+  - match: { aggregations.foo_count.value: 7 }
