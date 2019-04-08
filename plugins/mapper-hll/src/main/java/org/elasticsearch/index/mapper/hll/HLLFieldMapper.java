@@ -174,6 +174,8 @@ public class HLLFieldMapper extends FieldMapper {
             Object itemsObject = map.get("items");
             if (itemsObject instanceof List) {
                 value = ((List)itemsObject).get(0);
+            } else {
+                value = null;
             }
         } else {
             // controlling the context is what allows us to access array and other values
